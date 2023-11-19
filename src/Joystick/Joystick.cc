@@ -1093,6 +1093,18 @@ void Joystick::_yawStep(int direction)
     emit gimbalControlValue(_localPitch, _localYaw);
 }
 
+void Joystick::_pitchYawStep(int pitchDirection, int yawDirection)
+{
+    _localPitch += static_cast<double>(pitchDirection);
+    _localYaw   += static_cast<double>(yawDirection);
+    //-- Arbitrary range
+    if(_localPitch < -90.0) _localPitch = -90.0;
+    if(_localPitch >  35.0) _localPitch =  35.0;
+    if(_localYaw < -180.0) _localYaw = -180.0;
+    if(_localYaw >  180.0) _localYaw =  180.0;
+    emit gimbalControlValue(_localPitch, _localYaw);
+}
+
 bool Joystick::_validAxis(int axis) const
 {
     if(axis >= 0 && axis < _axisCount) {

@@ -122,6 +122,13 @@
     "default":     true
 },
 {
+    "name":             "virtualGimbalJoystick",
+    "shortDesc": "Show virtual joystick which controls gimbal",
+    "longDesc":  "If this option is enabled the virtual gimbal joystick will be shown on the Fly view.",
+    "type":             "bool",
+    "default":     false
+},
+{
     "name":                 "gstDebugLevel",
     "shortDesc":            "Video streaming debug",
     "longDesc":             "Sets the environment variable GST_DEBUG for all pipeline elements on boot.",

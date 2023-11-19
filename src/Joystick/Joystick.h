@@ -241,6 +241,7 @@ protected:
 
     void    _pitchStep              (int direction);
     void    _yawStep                (int direction);
+    void    _pitchYawStep           (int pitchDirection, int yawDirection);
     double  _localYaw       = 0.0;
     double  _localPitch     = 0.0;
 

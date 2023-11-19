@@ -268,6 +268,31 @@ Item {
         property real rightEdgeBottomInset: visible ? bottomEdgeRightInset + width/18 - ScreenTools.defaultFontPixelHeight*2 : 0
     }
 
+    //-- Virtual Gimbal Joystick
+    Loader {
+        id:                         virtualGimbalJoystickMultiTouch
+        z:                          QGroundControl.zOrderTopMost + 1
+        width:                      parent.width  - (_pipOverlay.width / 2)
+        height:                     Math.min(parent.height * 0.25, ScreenTools.defaultFontPixelWidth * 16)
+        visible:                    _virtualJoystickEnabled && !QGroundControl.videoManager.fullScreen && !(_activeVehicle ? _activeVehicle.usingHighLatencyLink : false)
+        anchors.top:                virtualJoystickMultiTouch.bottom
+        anchors.topMargin:          ScreenTools.defaultFontPixelHeight * 4
+        anchors.horizontalCenter:   parent.horizontalCenter
+        source:                     "qrc:/qml/VirtualGimbalJoystick.qml"
+        active:                     _virtualJoystickEnabled && !(_activeVehicle ? _activeVehicle.usingHighLatencyLink : false)
+
+        property bool autoCenterThrottle: QGroundControl.settingsManager.appSettings.virtualJoystickAutoCenterThrottle.rawValue
+
+        property bool _virtualJoystickEnabled: QGroundControl.settingsManager.appSettings.virtualJoystick.rawValue
+
+        property real bottomEdgeLeftInset: parent.height-y
+        property real bottomEdgeRightInset: parent.height-y
+
+        // Width is difficult to access directly hence this hack which may not work in all circumstances
+        property real leftEdgeBottomInset: visible ? bottomEdgeLeftInset + width/18 - ScreenTools.defaultFontPixelHeight*2 : 0
+        property real rightEdgeBottomInset: visible ? bottomEdgeRightInset + width/18 - ScreenTools.defaultFontPixelHeight*2 : 0
+    }
+
     FlyViewToolStrip {
         id:                     toolStrip
         anchors.leftMargin:     _toolsMargin + parentToolInsets.leftEdgeCenterInset

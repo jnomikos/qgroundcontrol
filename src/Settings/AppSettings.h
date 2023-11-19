@@ -40,6 +40,7 @@ public:
     DEFINE_SETTINGFACT(checkInternet)
     DEFINE_SETTINGFACT(virtualJoystick)
     DEFINE_SETTINGFACT(virtualJoystickAutoCenterThrottle)
+    DEFINE_SETTINGFACT(virtualGimbalJoystick)
     DEFINE_SETTINGFACT(appFontPointSize)
     DEFINE_SETTINGFACT(indoorPalette)
     DEFINE_SETTINGFACT(showLargeCompass)
