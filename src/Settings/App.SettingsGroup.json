@@ -254,6 +254,33 @@
     "shortDesc": "AirLink Password",
     "type": "string",
     "default": ""
+},
+{
+    "name":            "altitudeWarnThresholdEnabled",
+    "shortDesc":       "Altitude warning threshold enabled",
+    "longDesc":        "If this option is enabled, warn user if drone flies above or below altitude threshold.",
+    "type":            "bool",
+    "default":        true
+},
+{
+    "name":            "altitudeWarnMinAGL",
+    "shortDesc":       "Minimum altitude AGL for warning",
+    "longDesc":        "Minimum altitude warning threshold in meters above ground level.",
+    "type":            "double",
+    "default":         20.0,
+    "min":             0.0,
+    "units":           "m",
+    "decimalPlaces":   1
+},
+{
+    "name":            "altitudeWarnMaxAGL",
+    "shortDesc":       "Minimum altitude AGL for warning",
+    "longDesc":        "Minimum altitude warning threshold in meters above ground level.",
+    "type":            "double",
+    "default":         120.0,
+    "min":             0.0,
+    "units":           "m",
+    "decimalPlaces":   1
 }
 ]
 }
