@@ -99,6 +99,7 @@ FlightMap {
     property real _animatedLongitudeStop
     property real animatedLatitude
     property real animatedLongitude
+    property var _poiManager: QGroundControl.poiManager
 
     onAnimatedLatitudeChanged: _root.center = QtPositioning.coordinate(animatedLatitude, animatedLongitude)
     onAnimatedLongitudeChanged: _root.center = QtPositioning.coordinate(animatedLatitude, animatedLongitude)
@@ -641,6 +642,15 @@ FlightMap {
                         }
                     }
 
+                    QGCButton { 
+                        Layout.fillWidth:   true
+                        text:               qsTr("Add Place of Interest")
+                        onClicked: {
+                            mapClickDropPanel.close()
+                            _poiManager.addCoordinate(mapClickCoord)
+                        }
+                    }
+
                     QGCButton {
                         Layout.fillWidth:   true
                         text:               qsTr("Set Heading")
@@ -661,9 +671,44 @@ FlightMap {
         }
     }
 
+    Component {
+        id: poiPopupDialogComponent
+
+        QGCPopupDialog {
+            title:  qsTr("Place of Interest")
+
+            property var _poiManager: QGroundControl.poiManager
+            property var poiObject
+
+            Column {
+                width:      40 * ScreenTools.defaultFontPixelWidth
+                spacing:    ScreenTools.defaultFontPixelHeight
+
+                QGCLabel {
+                    anchors.left:   parent.left
+                    anchors.right:  parent.right
+                    wrapMode:       Text.WordWrap
+                    text:           "POI at: " + poiObject.coordinate.latitude.toFixed(6) + ", " + poiObject.coordinate.longitude.toFixed(6)
+                }
+
+                RowLayout {
+                    spacing: ScreenTools.defaultFontPixelWidth / 2
+
+                    QGCButton {
+                        Layout.fillWidth:   true
+                        text:               qsTr("Delete")
+                        onClicked: {
+                            _poiManager.removePoi(poiObject)
+                            close();
+                        }
+                    }
+                }
+            }
+}
+    }
+
     onMapClicked: (position) => {
-        if (!globals.guidedControllerFlyView.guidedUIVisible && 
-                (globals.guidedControllerFlyView.showGotoLocation || globals.guidedControllerFlyView.showOrbit || globals.guidedControllerFlyView.showROI || globals.guidedControllerFlyView.showSetHome || globals.guidedControllerFlyView.showSetEstimatorOrigin)) {
+        if (!globals.guidedControllerFlyView.guidedUIVisible) {
             orbitMapCircle.hide()
             gotoLocationItem.hide()
 
@@ -673,6 +718,36 @@ FlightMap {
             position = _root.mapToItem(globals.parent, position)
             var dropPanel = mapClickDropPanelComponent.createObject(mainWindow, { mapClickCoord: clickCoord, clickRect: Qt.rect(position.x, position.y, 0, 0) })
             dropPanel.open()
+        }
+    }
+
+
+    MapItemView {
+        id: poiPoints
+        model: _poiManager.poiList
+        delegate: MapQuickItem {
+            coordinate: object.coordinate
+            sourceItem: Rectangle {
+                width: ScreenTools.defaultFontPixelHeight * 2
+                height: width
+                radius: width / 2
+                color: poiMouseArea.pressed ? "yellow" : "red"
+                z: QGroundControl.zOrderTopMost
+                border.color: "black"
+                border.width: 1
+
+                MouseArea {
+                    id: poiMouseArea
+                    anchors.fill: parent
+                    z: QGroundControl.zOrderTopMost + 1
+                    onClicked: {
+                        console.log("POI clicked at: " + object.coordinate.latitude + ", " + object.coordinate.longitude)
+
+                        poiPopupDialogComponent.createObject(mainWindow, { poiObject: object }).open()
+                    }
+                }
+                
+            }
         }
     }
 
