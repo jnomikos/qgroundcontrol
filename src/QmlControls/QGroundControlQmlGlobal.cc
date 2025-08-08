@@ -57,6 +57,7 @@
 #ifdef QGC_UTM_ADAPTER
 #include "UTMSPManager.h"
 #endif
+#include "POIManager.h"
 
 #include <QtCore/QSettings>
 #include <QtCore/QLineF>
@@ -119,6 +120,7 @@ QGroundControlQmlGlobal::QGroundControlQmlGlobal(QObject *parent)
     , _settingsManager(SettingsManager::instance())
     , _corePlugin(QGCCorePlugin::instance())
     , _globalPalette(new QGCPalette(this))
+    , _poiManager(POIManager::instance())
 #ifndef QGC_NO_SERIAL_LINK
     , _gpsRtkFactGroup(GPSManager::instance()->gpsRtk()->gpsRtkFactGroup())
 #endif

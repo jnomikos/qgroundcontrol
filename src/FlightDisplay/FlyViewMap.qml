@@ -47,6 +47,7 @@ FlightMap {
     property real   _toolsMargin:               ScreenTools.defaultFontPixelWidth * 0.75
     property var    _flyViewSettings:           QGroundControl.settingsManager.flyViewSettings
     property bool   _keepMapCenteredOnVehicle:  _flyViewSettings.keepMapCenteredOnVehicle.rawValue
+    property var _poiManager:                   QGroundControl.poiManager
 
     property bool   _disableVehicleTracking:    false
     property bool   _keepVehicleCentered:       pipMode ? true : false
@@ -651,6 +652,16 @@ FlightMap {
                         }
                     }
 
+                    QGCButton {
+                        Layout.fillWidth:   true
+                        text:               qsTr("Add Place of Interest")
+                        onClicked: {
+                            mapClickDropPanel.close()
+                            _poiManager.addCoordinate(mapClickCoord)
+                        }
+                    }
+
+
                     ColumnLayout {
                         spacing: 0
                         QGCLabel { text: qsTr("Lat: %1").arg(mapClickCoord.latitude.toFixed(6)) }
@@ -686,6 +697,69 @@ FlightMap {
         visible:            !ScreenTools.isTinyScreen && QGroundControl.corePlugin.options.flyView.showMapScale && mapControl.pipState.state === mapControl.pipState.windowState
 
         property real centerInset: visible ? parent.height - y : 0
+    }
+
+    Component {
+        id: poiPopupDialogComponent
+
+        QGCPopupDialog {
+            title:  qsTr("Place of Interest")
+
+            property var _poiManager: QGroundControl.poiManager
+            property var poiObject
+
+            Column {
+                width:      40 * ScreenTools.defaultFontPixelWidth
+                spacing:    ScreenTools.defaultFontPixelHeight
+
+                QGCLabel {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    wrapMode: Text.WordWrap
+                    text: "Place of interest at: " + poiObject.coordinate.latitude + ", " + poiObject.coordinate.longitude
+                }
+
+                QGCButton {
+                    text: qsTr("Delete")
+                    onClicked: {
+                        if(!poiObject) {
+                            return;
+                        }
+                    
+                        _poiManager.removePoi(poiObject);
+                        close()
+                    }
+                }
+            }
+        }
+    }
+
+    MapItemView {
+        id: poiPoints
+        model: _poiManager.poiList
+        delegate: MapQuickItem {
+            coordinate: object.coordinate
+            sourceItem: Rectangle {
+                width: ScreenTools.defaultFontPixelHeight * 2
+                height: width
+                radius: width / 2
+                color: poiMouseArea.pressed ? "yellow" : "red"
+                z: QGroundControl.zOrderTopMost
+                border.color: "black"
+                border.width: 1
+
+                MouseArea {
+                    id: poiMouseArea
+                    anchors.fill: parent
+                    z: QGroundControl.zOrderTopMost + 1
+                    onClicked: {
+                        console.log("POI clicked at: " + object.coordinate)
+
+                        poiPopupDialogComponent.createObject(mainWindow, {poiObject: object}).open()
+                    }
+                }
+            }
+        }
     }
 
 }
