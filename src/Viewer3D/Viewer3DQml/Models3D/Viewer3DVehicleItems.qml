@@ -163,7 +163,10 @@ Node {
 
     ListModel {
         id: missionWaypointListModel
+    }
 
+    Component.onDestruction: {
+        missionWaypointListModel.clear()
     }
 
     DroneModelDjiF450 {
