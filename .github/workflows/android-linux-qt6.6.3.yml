@@ -18,6 +18,7 @@ on:
       - 'CMakeLists.txt'
       - 'cmake/**'
       - 'translations/*'
+      - 'custom/**'
 
 # concurrency:
 #   group: ${{ github.workflow }}-${{ github.ref }}

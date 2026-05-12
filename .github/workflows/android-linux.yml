@@ -18,6 +18,13 @@ on:
       - 'CMakeLists.txt'
       - 'cmake/**'
       - 'translations/*'
+      - 'custom/**'
+  workflow_call:
+    inputs:
+      stable:
+        description: 'Mark as stable build'
+        type: boolean
+        default: false
 
 # concurrency:
 #   group: ${{ github.workflow }}-${{ github.ref }}
@@ -88,11 +95,31 @@ jobs:
               -DQT_HOST_PATH="${{ env.QT_ROOT_DIR }}/../gcc_64"
               -DQT_ANDROID_SIGN_APK=${{ env.QT_ANDROID_KEYSTORE_STORE_PASS != '' && 'ON' || 'OFF' }}
               -DQT_DEBUG_FIND_PACKAGE=ON
-              -DQGC_STABLE_BUILD=${{ github.ref_type == 'tag' || contains(github.ref, 'Stable') && 'ON' || 'OFF' }}
+              -DQGC_STABLE_BUILD=${{ inputs.stable == true || github.ref_type == 'tag' || contains(github.ref, 'Stable') && 'ON' || 'OFF' }}
+
+      - name: Diagnose - Icons after configure
+        run: |
+          echo "=== MD5 of icons in source custom/android/res ==="
+          find ${{ github.workspace }}/custom/android/res -name "icon.png" -exec md5sum {} \;
+          echo "=== MD5 of icons in merged shadow_build_dir/custom/android/res ==="
+          find ${{ runner.temp }}/shadow_build_dir/custom/android/res -name "icon.png" -exec md5sum {} \; 2>/dev/null || echo "(merged dir not found)"
 
       - name: Build
         working-directory: ${{ runner.temp }}/shadow_build_dir
         run: cmake --build . --target all --config ${{ matrix.BuildType }}
+
+      - name: Diagnose - Icons after build
+        run: |
+          echo "=== MD5 of icons in android-build/res (what Gradle packaged) ==="
+          find ${{ runner.temp }}/shadow_build_dir/android-build/res -name "icon.png" -exec md5sum {} \; 2>/dev/null || echo "(android-build/res not found)"
+          echo "=== All android_deployment_settings.json files and their package-source-dir ==="
+          find ${{ runner.temp }}/shadow_build_dir -name "android_deployment_settings.json" | while read f; do
+            echo "--- $f ---"
+            grep -i "package-source" "$f" || echo "(no package-source-dir key)"
+          done
+          echo "=== Icons in any Qt ABI sub-build dirs ==="
+          find ${{ runner.temp }}/shadow_build_dir -path "*/.qt/*/custom/android/res" -name "icon.png" -exec md5sum {} \; 2>/dev/null || true
+          find ${{ runner.temp }}/shadow_build_dir/.qt -name "icon.png" -exec md5sum {} \; 2>/dev/null || echo "(no .qt subdir found)"
 
       - run: cp ${{ runner.temp }}/shadow_build_dir/android-build/*.apk ${{ runner.temp }}/shadow_build_dir/${{ env.ARTIFACT }}
 

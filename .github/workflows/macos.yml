@@ -16,6 +16,13 @@ on:
       - 'src/**'
       - 'CMakeLists.txt'
       - 'cmake/**'
+      - 'custom/**'
+  workflow_call:
+    inputs:
+      stable:
+        description: 'Mark as stable build'
+        type: boolean
+        default: false
 
 # concurrency:
 #   group: ${{ github.workflow }}-${{ github.ref }}
@@ -87,7 +94,7 @@ jobs:
         run: ${{ env.QT_ROOT_DIR }}/bin/qt-cmake -S ${{ github.workspace }} -B . -G Ninja
               -DCMAKE_BUILD_TYPE=${{ matrix.BuildType }}
               -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
-              -DQGC_STABLE_BUILD=${{ github.ref_type == 'tag' || contains(github.ref, 'Stable') && 'ON' || 'OFF' }}
+              -DQGC_STABLE_BUILD=${{ inputs.stable == true || github.ref_type == 'tag' || contains(github.ref, 'Stable') && 'ON' || 'OFF' }}
               -DQGC_MACOS_SIGN_WITH_IDENTITY=${{ github.event_name != 'pull_request' && 'ON' || 'OFF' }}
 
       - name: Build
@@ -121,7 +128,7 @@ jobs:
       - name: Sanity check DMG executable
         working-directory: /Volumes/QGroundControl/QGroundControl.app/Contents/MacOS
         run: ./QGroundControl --simple-boot-test
-  
+
       - name: Upload Build File
         if: matrix.BuildType == 'Release'
         uses: ./.github/actions/upload

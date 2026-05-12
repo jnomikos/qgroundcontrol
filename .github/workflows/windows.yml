@@ -16,6 +16,13 @@ on:
       - 'src/**'
       - 'CMakeLists.txt'
       - 'cmake/**'
+      - 'custom/**'
+  workflow_call:
+    inputs:
+      stable:
+        description: 'Mark as stable build'
+        type: boolean
+        default: false
 
 # concurrency:
 #   group: ${{ github.workflow }}-${{ github.ref }}
@@ -116,7 +123,7 @@ jobs:
               -DCMAKE_BUILD_TYPE=${{ matrix.BuildType }}
               -DQT_HOST_PATH="${{ env.QT_ROOT_DIR }}/../msvc2022_64"
               -DQT_DEBUG_FIND_PACKAGE=ON
-              -DQGC_STABLE_BUILD=${{ github.ref_type == 'tag' || contains(github.ref, 'Stable') && 'ON' || 'OFF' }}
+              -DQGC_STABLE_BUILD=${{ inputs.stable == true || github.ref_type == 'tag' || contains(github.ref, 'Stable') && 'ON' || 'OFF' }}
 
       - name: Build
         working-directory: ${{ runner.temp }}\shadow_build_dir

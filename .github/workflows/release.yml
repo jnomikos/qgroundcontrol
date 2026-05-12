@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name (e.g. v1.2.3)'
+        required: true
+        type: string
+      release_name:
+        description: 'Release display name'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  linux:
+    uses: ./.github/workflows/linux.yml
+    secrets: inherit
+    with:
+      stable: ${{ !inputs.prerelease }}
+
+  windows:
+    uses: ./.github/workflows/windows.yml
+    secrets: inherit
+    with:
+      stable: ${{ !inputs.prerelease }}
+
+  android:
+    uses: ./.github/workflows/android-linux.yml
+    secrets: inherit
+    with:
+      stable: ${{ !inputs.prerelease }}
+
+  release:
+    needs: [linux, windows, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          name: ${{ inputs.release_name }}
+          files: release-artifacts/*
+          draft: false
+          prerelease: ${{ inputs.prerelease }}
+          token: ${{ secrets.GITHUB_TOKEN }}
