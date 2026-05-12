@@ -47,7 +47,7 @@ elseif(LINUX)
     )
     install(
         FILES ${QGC_APPIMAGE_ICON_PATH}
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/128x128/apps/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps/
         RENAME ${CMAKE_PROJECT_NAME}.png
     )
     configure_file(
@@ -59,10 +59,20 @@ elseif(LINUX)
         FILES ${CMAKE_BINARY_DIR}/metainfo/org.mavlink.qgroundcontrol.metainfo.xml
         DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo/
     )
+    configure_file(
+        ${CMAKE_SOURCE_DIR}/deploy/linux/AppRun.in
+        ${CMAKE_BINARY_DIR}/AppRun
+        @ONLY
+    )
     install(
-        FILES ${CMAKE_SOURCE_DIR}/deploy/linux/AppRun
+        FILES ${CMAKE_BINARY_DIR}/AppRun
         DESTINATION ${CMAKE_BINARY_DIR}
     )
+    install(CODE "set(CMAKE_PROJECT_NAME \"${CMAKE_PROJECT_NAME}\")")
+    install(CODE "set(CMAKE_PROJECT_VERSION \"${CMAKE_PROJECT_VERSION}\")")
+    install(CODE "set(CMAKE_SYSTEM_PROCESSOR \"${CMAKE_SYSTEM_PROCESSOR}\")")
+    install(CODE "set(CMAKE_BINARY_DIR \"${CMAKE_BINARY_DIR}\")")
+    install(CODE "set(QGC_PACKAGE_NAME \"${QGC_PACKAGE_NAME}\")")
     install(SCRIPT "${CMAKE_SOURCE_DIR}/cmake/CreateAppImage.cmake")
 elseif(WIN32)
     install(CODE "set(CMAKE_PROJECT_NAME ${CMAKE_PROJECT_NAME})")
