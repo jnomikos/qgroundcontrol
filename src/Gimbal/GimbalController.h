@@ -104,6 +104,7 @@ private:
     QTimer _rateSenderTimer;
     Vehicle *_vehicle = nullptr;
     Gimbal *_activeGimbal = nullptr;
+    bool _gimbalControlAcquisitionPending = false;
 
     struct PotentialGimbalManager {
         unsigned requestGimbalManagerInformationRetries = 6;

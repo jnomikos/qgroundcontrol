@@ -46,6 +46,7 @@ void GimbalController::setActiveGimbal(Gimbal *gimbal)
     if (gimbal != _activeGimbal) {
         qCDebug(GimbalControllerLog) << "Set active gimbal:" << gimbal;
         _activeGimbal = gimbal;
+        _gimbalControlAcquisitionPending = false;
         emit activeGimbalChanged();
     }
 }
@@ -184,6 +185,11 @@ void GimbalController::_handleGimbalManagerStatus(const mavlink_message_t &messa
 
     if (gimbal->gimbalOthersHaveControl() != othersHaveControl) {
         gimbal->setGimbalOthersHaveControl(othersHaveControl);
+    }
+
+    // Clear acquisition pending flag once the vehicle has confirmed a definitive control state
+    if (haveControl || othersHaveControl || (status.primary_control_sysid == 0 && status.primary_control_compid == 0)) {
+        _gimbalControlAcquisitionPending = false;
     }
 
     _checkComplete(*gimbal, pairId);
@@ -351,11 +357,18 @@ bool GimbalController::_tryGetGimbalControl()
 
     if (_activeGimbal->gimbalOthersHaveControl()) {
         qCDebug(GimbalControllerLog) << "Others in control, showing popup for user to confirm control..";
+        _gimbalControlAcquisitionPending = false;
         emit showAcquireGimbalControlPopup();
         return false;
     } else if (!_activeGimbal->gimbalHaveControl()) {
-        qCDebug(GimbalControllerLog) << "Nobody in control, acquiring control ourselves..";
-        acquireGimbalControl();
+        if (!_gimbalControlAcquisitionPending) {
+            qCDebug(GimbalControllerLog) << "Nobody in control, acquiring control ourselves..";
+            acquireGimbalControl();
+            _gimbalControlAcquisitionPending = true;
+        } else {
+            qCDebug(GimbalControllerLog) << "Control acquisition already pending, waiting for confirmation..";
+        }
+        return false;
     }
 
     return true;
