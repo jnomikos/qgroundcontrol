@@ -579,6 +579,62 @@ Item {
             autoHide: true
         }
 
+        // Repro aid for https://github.com/mavlink/qgroundcontrol/issues/15151 - not for merge.
+        // Changing the current waypoint to/from the Terrain frame makes the queued
+        // MissionController::_recalcFlightPathSegments delete the segment splitSegment still points to.
+        QGCButton {
+            id: issue15151Button
+            anchors.margins: _toolsMargin
+            anchors.top: parent.top
+            anchors.horizontalCenter: parent.horizontalCenter
+            z: QGroundControl.zOrderWidgets
+            text: "Repro #15151"
+
+            // 0: idle, 1: waiting for splitSegment, 2: waiting for segment rebuild, 3: segment deleted
+            property int _step: 0
+
+            onClicked: {
+                const center = mapCenter()
+                _missionController.globalAltitudeFrame = QGroundControl.AltitudeFrameMixed
+                insertSimpleItemAfterCurrent(center.atDistanceAndAzimuth(100, 0))
+                insertSimpleItemAfterCurrent(center.atDistanceAndAzimuth(200, 0))
+                _step = 1
+            }
+
+            Connections {
+                target: _missionController
+
+                function onSplitSegmentChanged() {
+                    if (issue15151Button._step === 1 && _missionController.splitSegment) {
+                        issue15151Button._step = 2
+                        // Same as picking a different entry in the waypoint's Alt Frame combo
+                        const item = _missionController.currentPlanViewItem
+                        item.altitudeFrame = item.altitudeFrame === QGroundControl.AltitudeFrameTerrain ?
+                                    QGroundControl.AltitudeFrameRelative : QGroundControl.AltitudeFrameTerrain
+                    }
+                }
+
+                // Emitted synchronously right after the stale segment is deleted
+                function onRecalcTerrainProfile() {
+                    if (issue15151Button._step === 3) {
+                        issue15151Button._step = 0
+                        // Same read of the dangling splitSegment that any map pan/zoom does
+                        splitSegmentItem._updateScreenLegLength()
+                    }
+                }
+            }
+
+            Connections {
+                target: _missionController.simpleFlightPathSegments
+
+                function onModelReset() {
+                    if (issue15151Button._step === 2) {
+                        issue15151Button._step = 3
+                    }
+                }
+            }
+        }
+
         PlanViewRightPanel {
             id: rightPanel
             anchors.top: parent.top
