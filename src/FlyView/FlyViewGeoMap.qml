@@ -154,6 +154,7 @@ GeoMapView {
     }
 
     GeoMapMissionPath {
+        id: missionPath
         scene: root.scene
         surfaceModel: root.surfaceModel
         missionController: root._missionController
@@ -210,6 +211,7 @@ GeoMapView {
         scene: root.scene
         surfaceModel: root.surfaceModel
         missionController: root._missionController
+        missionPath: missionPath
         homeTerrainBias: root._activeVehicleHomeTerrainBias
     }
 

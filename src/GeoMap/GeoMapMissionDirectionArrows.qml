@@ -18,10 +18,15 @@ import QGroundControl.Controls
 /// path segment and every 5 segments thereafter, regardless of simple vs
 /// complex item — see MissionController::_recalcFlightPathSegments),
 /// mirroring the MapLineArrow Repeater in src/FlightMap/MapItems/PlanMapItems.qml.
+/// Each arrow sits on the level part of the leg as GeoMapMissionPath draws it
+/// (missionPath.legChord), so it stays on the ribbon where the 3D route
+/// differs from the segment's straight line: a vertical takeoff climb or
+/// return descent of a hover-capable vehicle.
 Item {
     id: root
 
     property var missionController
+    property var missionPath           ///< The GeoMapMissionPath drawing the same mission
     property var scene
     property var surfaceModel
     property real homeTerrainBias: 0   ///< See GeoMapWaypointItem.homeTerrainBias
@@ -39,17 +44,36 @@ Item {
             visible: !isNaN(object.coord1AMSLAlt) && !isNaN(object.coord2AMSLAlt)
             fromCoord: {
                 _terrainRev
-                return _terrainLeg ? _drapedPoint(0.75 - _halfChordFraction)
-                                   : QtPositioning.coordinate(object.coordinate1.latitude, object.coordinate1.longitude,
-                                                              object.coord1AMSLAlt + root.homeTerrainBias)
+                if (_terrainLeg) {
+                    return _drapedPoint(0.75 - _halfChordFraction)
+                }
+                const chord = _levelChord
+                return chord ? _biased(chord.from)
+                             : QtPositioning.coordinate(object.coordinate1.latitude, object.coordinate1.longitude,
+                                                        object.coord1AMSLAlt + root.homeTerrainBias)
             }
             toCoord: {
                 _terrainRev
-                return _terrainLeg ? _drapedPoint(0.75 + _halfChordFraction)
-                                   : QtPositioning.coordinate(object.coordinate2.latitude, object.coordinate2.longitude,
-                                                              object.coord2AMSLAlt + root.homeTerrainBias)
+                if (_terrainLeg) {
+                    return _drapedPoint(0.75 + _halfChordFraction)
+                }
+                const chord = _levelChord
+                return chord ? _biased(chord.to)
+                             : QtPositioning.coordinate(object.coordinate2.latitude, object.coordinate2.longitude,
+                                                        object.coord2AMSLAlt + root.homeTerrainBias)
             }
             fraction: _terrainLeg ? 0.5 : 0.75
+
+            // The ribbon's level piece for this segment, when the mission
+            // path draws one (route altitudes are vehicle AMSL)
+            readonly property var _levelChord: root.missionPath
+                                               ? root.missionPath.legChord(object.coordinate1, object.coordinate2)
+                                               : null
+
+            function _biased(coordinate) {
+                return QtPositioning.coordinate(coordinate.latitude, coordinate.longitude,
+                                                coordinate.altitude + root.homeTerrainBias)
+            }
 
             // Terrain-frame legs are draped over the DEM (see
             // GeoMapMissionPath), so anchor the arrow to a short draped chord

@@ -68,11 +68,14 @@ GeoMapView {
     }
 
     GeoMapMissionPath {
+        id: missionPath
         objectName: "geoMapMissionPath"
         scene: root.scene
         surfaceModel: root.surfaceModel
         missionController: root._missionController
-        vehicle: root.planMasterController ? root.planMasterController.controllerVehicle : null
+        // The connected vehicle when there is one (its return altitude parameters shape the route), else the
+        // offline controller vehicle
+        vehicle: root.planMasterController ? root.planMasterController.managerVehicle : null
         plannedHomePosition: root._plannedHomePosition
         opacity: root.missionOpacity
     }
@@ -105,6 +108,7 @@ GeoMapView {
         scene: root.scene
         surfaceModel: root.surfaceModel
         missionController: root._missionController
+        missionPath: missionPath
         opacity: root.missionOpacity
     }
 

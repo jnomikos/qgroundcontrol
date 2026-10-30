@@ -23,11 +23,13 @@ import "GeoMapAltitude.js" as GeoMapAltitude
 /// through a complex item's own footprint rather than skipping it), at true
 /// (AMSL) altitude. A leg is flown in its destination item's frame (ArduPilot
 /// AC_WPNav): legs arriving at a terrain-frame item are draped over the DEM
-/// with a linear AGL ramp, all other legs are straight lines. A non-fixed-wing
-/// takeoff climbs vertically over the launch point to the takeoff altitude
+/// with a linear AGL ramp, all other legs are straight lines. A hover-capable
+/// vehicle climbs vertically over the launch point to the takeoff altitude
 /// before heading out (MissionController models the leg to a positioned
 /// takeoff item that way; an altitude-only ArduPilot takeoff gets an explicit
-/// climb point). Straight legs
+/// climb point) and returns home at the vehicle's configured return
+/// altitude, climbing to it in place first when it is above the last
+/// altitude, before descending vertically. Straight legs
 /// that pass below the terrain draw in collisionColor, as Plan view marks
 /// them. Stays visible
 /// in 2D mode (crossfade3D off), same as GeoMapFlightPath. Rebuilt wholesale
@@ -36,7 +38,7 @@ import "GeoMapAltitude.js" as GeoMapAltitude
 GeoMapItem {
     id: root
 
-    enum Leg { Generic, Terrain, Takeoff, Land, Interior }
+    enum Leg { Generic, Terrain, Takeoff, Land, Interior, Return }
 
     property var missionController
     property var vehicle       ///< Active vehicle, for the RTL-to-home segment
@@ -109,7 +111,8 @@ GeoMapItem {
     // ARRIVING at a point, mirroring segmentTypeForPair: Takeoff / Land
     // destinations first, then Terrain for a terrain-frame destination
     // (MAV_FRAME_GLOBAL_TERRAIN_ALT), else Generic; Interior is a complex
-    // item's own entry -> exit span, which has no flight path segment. Recomputes automatically on any
+    // item's own entry -> exit span, which has no flight path segment, and
+    // Return is the RTL link back to home. Recomputes automatically on any
     // structural or per-item change since the loop below reads every
     // NOTIFY-backed property it depends on.
     readonly property var _routePoints: {
@@ -124,13 +127,13 @@ GeoMapItem {
                     const returnCoordinate = root.plannedHomePosition.isValid ? root.plannedHomePosition
                                            : (root.vehicle ? root.vehicle.homePosition : QtPositioning.coordinate())
                     if (points.length > 0 && returnCoordinate.isValid) {
-                        points.push({ coordinate: returnCoordinate, leg: GeoMapMissionPath.Generic })
+                        points.push({ coordinate: returnCoordinate, leg: GeoMapMissionPath.Return })
                     }
                     break
                 }
                 if (points.length === 0 && visualItem.isTakeoffItem) {
                     linkStartToHome = true
-                    if (!visualItem.specifiesCoordinate && root._straightUpTakeoff) {
+                    if (!visualItem.specifiesCoordinate && root._hoverCapable) {
                         altitudeOnlyTakeoff = visualItem
                     }
                 }
@@ -199,25 +202,71 @@ GeoMapItem {
     readonly property real _terrainSampleSpacingM: 50
     readonly property int _maxTerrainSamplesPerLeg: 200
 
-    // MissionController::_createFlightPathSegmentWorker: a non-fixed-wing
-    // (multicopter, and VTOL in multicopter mode) climbs vertically to the
-    // takeoff altitude, then flies over to the takeoff position at that
-    // altitude; only a fixed-wing climbs along the leg
-    readonly property bool _straightUpTakeoff: !(root.vehicle && root.vehicle.fixedWing)
+    // A hover-capable vehicle (multicopter, and VTOL in multicopter mode)
+    // changes altitude in place at both ends of the mission: on takeoff it
+    // climbs vertically to the takeoff altitude, then flies over to the
+    // takeoff position at that altitude (MissionController::
+    // _createFlightPathSegmentWorker); on RTL it climbs in place to the
+    // return altitude when below it (ArduCopter RTL_ALT, PX4 RTL_RETURN_ALT),
+    // flies home level, then descends vertically over home. A fixed-wing
+    // climbs and descends along the leg instead.
+    readonly property bool _hoverCapable: !(root.vehicle && root.vehicle.fixedWing)
 
-    function _climbsStraightUp(point) {
-        return point.leg === GeoMapMissionPath.Takeoff && root._straightUpTakeoff
+    // Return altitude above home from the connected vehicle's parameters;
+    // NaN when unknown (no vehicle, parameters not loaded), in which case the
+    // return holds the last altitude
+    readonly property real _returnAltitudeAboveHome: root.vehicle ? root.vehicle.returnAltitudeAboveHome : NaN
+
+    // Altitude the return leg arriving at point index i is flown at
+    function _returnAltitude(points, i) {
+        const lastAltitude = points[i - 1].coordinate.altitude
+        const returnAmsl = points[i].coordinate.altitude + root._returnAltitudeAboveHome
+        return isNaN(returnAmsl) ? lastAltitude : Math.max(lastAltitude, returnAmsl)
     }
 
-    // Start of the horizontal part of the leg arriving at point index i: the
-    // climb point above the previous point for a straight-up takeoff leg,
-    // else the previous point itself
+    function _climbsStraightUp(point) {
+        return point.leg === GeoMapMissionPath.Takeoff && root._hoverCapable
+    }
+
+    function _descendsStraightDown(point) {
+        return point.leg === GeoMapMissionPath.Return && root._hoverCapable
+    }
+
+    // The level part of the leg arriving at point index i runs from _legStart
+    // to _legEnd: the climb top above the previous point for a straight-up
+    // takeoff, the return altitude above both ends for a return ending in a
+    // vertical descent, else the leg's own endpoints
     function _legStart(points, i) {
         const prev = points[i - 1].coordinate
         if (root._climbsStraightUp(points[i])) {
             return QtPositioning.coordinate(prev.latitude, prev.longitude, points[i].coordinate.altitude)
         }
+        if (root._descendsStraightDown(points[i])) {
+            return QtPositioning.coordinate(prev.latitude, prev.longitude, root._returnAltitude(points, i))
+        }
         return prev
+    }
+
+    function _legEnd(points, i) {
+        const coord = points[i].coordinate
+        if (root._descendsStraightDown(points[i])) {
+            return QtPositioning.coordinate(coord.latitude, coord.longitude, root._returnAltitude(points, i))
+        }
+        return coord
+    }
+
+    // Level part of the drawn leg from one route point to the next, matched
+    // by position (altitudes are the vehicle's AMSL), for the direction
+    // arrows; null when no leg joins the two
+    function legChord(fromCoordinate, toCoordinate) {
+        const points = root._routePoints
+        for (let i = 1; i < points.length; ++i) {
+            if (points[i].coordinate.distanceTo(toCoordinate) < 0.01
+                    && points[i - 1].coordinate.distanceTo(fromCoordinate) < 0.01) {
+                return { from: root._legStart(points, i), to: root._legEnd(points, i) }
+            }
+        }
+        return null
     }
 
     // Terrain sampling can't live in the _routePoints binding: terrainHeightAt
@@ -234,6 +283,7 @@ GeoMapItem {
             if (i > 0) {
                 const prev = points[i - 1].coordinate
                 const legStart = root._legStart(points, i)
+                const legEnd = root._legEnd(points, i)
                 const collision = collisions[i]
                 // Restart a recolored leg at a copy of its start point so the color
                 // changes at the waypoint instead of blending along the leg
@@ -241,13 +291,19 @@ GeoMapItem {
                     coordinates.push(prev)
                     highlights.push(collision)
                 }
-                if (root._climbsStraightUp(points[i]) && legStart.distanceTo(coord) > 0) {
+                // A vertical climb or descent only needs its own point when
+                // the leg also moves horizontally
+                const levelLeg = legStart.distanceTo(legEnd) > 0
+                if (levelLeg && legStart.altitude !== prev.altitude) {
                     coordinates.push(legStart)
                 }
                 if (points[i].leg === GeoMapMissionPath.Terrain && root.surfaceModel) {
-                    root._appendTerrainLeg(coordinates, legStart, coord)
+                    root._appendTerrainLeg(coordinates, legStart, legEnd)
                 } else {
-                    coordinates.push(...root._longLegSubdivision(legStart, coord))
+                    coordinates.push(...root._longLegSubdivision(legStart, legEnd))
+                }
+                if (levelLeg && legEnd.altitude !== coord.altitude) {
+                    coordinates.push(legEnd)
                 }
                 coordinates.push(coord)
                 while (highlights.length < coordinates.length) {
@@ -304,7 +360,8 @@ GeoMapItem {
 
     // Per route point: the leg arriving there passes below the terrain
     // (FlightPathSegment::terrainCollision rules). Terrain-frame legs ride the
-    // terrain and never collide.
+    // terrain and never collide; the vertical climb and descent of a
+    // hover-capable vehicle are not checked, only the level part between them.
     property var _legCollisions: []
 
     // FlightPathSegment::_collisionIgnoreMeters: takeoff and land legs meet the ground at one end
@@ -322,8 +379,8 @@ GeoMapItem {
             if (leg === GeoMapMissionPath.Terrain || leg === GeoMapMissionPath.Interior) {
                 continue
             }
-            const coord = points[i].coordinate
             const prev = root._legStart(points, i)
+            const coord = root._legEnd(points, i)
             // Check the same great-circle pieces _expandedPath draws
             const chain = [prev, ...root._longLegSubdivision(prev, coord), coord]
             for (let j = 1; j < chain.length && !collisions[i]; ++j) {
@@ -383,7 +440,8 @@ GeoMapItem {
     }
 
     on_RoutePointsChanged: _scheduleReloadPath()
-    on_StraightUpTakeoffChanged: _scheduleReloadPath()
+    on_HoverCapableChanged: _scheduleReloadPath()
+    on_ReturnAltitudeAboveHomeChanged: _scheduleReloadPath()
     onHomeTerrainBiasChanged: _scheduleCollisionRefresh()
 
     readonly property bool _hasTerrainLeg: _routePoints.some(p => p.leg === GeoMapMissionPath.Terrain)

@@ -26,6 +26,7 @@
 #include "GeoMapCamera.h"
 #include "MissionController.h"
 #include "MockLink.h"
+#include "ParameterManager.h"
 #include "PlanMasterController.h"
 #include "PlanViewSettings.h"
 #include "QGCFileDialogController.h"
@@ -1260,6 +1261,170 @@ void PlanPanelUITest::_testGeoMapMissionPathClimbsStraightUpOnMulticopterTakeoff
     QDebug(&failure) << "The ribbon does not climb vertically over home to the takeoff altitude before heading out:"
                      << ribbon();
     QVERIFY2(climbed, qPrintable(failure));
+}
+
+namespace {
+
+QList<QGeoCoordinate> geoMapMissionRibbon(QQuickItem* missionPath)
+{
+    QVariant path;
+    QMetaObject::invokeMethod(missionPath, "_expandedPath", Q_RETURN_ARG(QVariant, path));
+    QList<QGeoCoordinate> coordinates;
+    for (const QVariant& coordinate : path.toMap().value(QStringLiteral("coordinates")).toList()) {
+        coordinates.append(coordinate.value<QGeoCoordinate>());
+    }
+    return coordinates;
+}
+
+/// The ribbon ends with the return leg of a hover-capable vehicle: departure from the last waypoint, a climb
+/// in place when the return altitude is above it, level flight to above home, then the descent to the ground
+bool ribbonReturnsAt(const QList<QGeoCoordinate>& ribbon, const QGeoCoordinate& lastCoordinate, double lastAmsl,
+                     const QGeoCoordinate& home, double levelAmsl)
+{
+    const bool climbs = levelAmsl > lastAmsl + 0.5;
+    const int tailCount = climbs ? 4 : 3;
+    if (ribbon.size() < tailCount) {
+        return false;
+    }
+    int index = ribbon.size() - tailCount;
+    const auto at = [&](const QGeoCoordinate& position, double altitude) {
+        const QGeoCoordinate& point = ribbon[index++];
+        return point.distanceTo(position) < 0.5 && qAbs(point.altitude() - altitude) < 0.5;
+    };
+    if (!at(lastCoordinate, lastAmsl)) {
+        return false;
+    }
+    if (climbs && !at(lastCoordinate, levelAmsl)) {
+        return false;
+    }
+    if (!at(home, levelAmsl)) {
+        return false;
+    }
+    const QGeoCoordinate& ground = ribbon[index];
+    return ground.distanceTo(home) < 0.5 && ground.altitude() < levelAmsl - 1.0;
+}
+
+}  // namespace
+
+void PlanPanelUITest::_testGeoMapMissionPathReturnsLevelThenDescendsOnMulticopter()
+{
+    _startPlanPanel(true /* geoMapEngine */);
+    if (QTest::currentTestFailed())
+        return;
+
+    _buildMission(2);
+    if (QTest::currentTestFailed())
+        return;
+
+    PlanMasterController* const master = _planMasterController();
+    QVERIFY(master);
+    Vehicle* const vehicle = master->controllerVehicle();
+    QVERIFY2(!vehicle->fixedWing(), "This test needs a vehicle that lands vertically");
+    // Without a connected vehicle the return altitude is unknown: the return holds the plan altitude
+    QVERIFY(std::isnan(vehicle->returnAltitudeAboveHome()));
+    MissionController* const controller = _missionController();
+    QVERIFY(controller);
+    const int itemCount = controller->visualItems()->count();
+    VisualMissionItem* const lastWaypoint = controller->visualItems()->value<VisualMissionItem*>(itemCount - 1);
+    QVERIFY(lastWaypoint);
+    const QGeoCoordinate lastCoordinate = lastWaypoint->coordinate();
+    const double lastAmsl = lastWaypoint->amslEntryAlt();
+    // For a multicopter the land insert appends a Return item
+    QVERIFY(controller->insertLandItem(lastCoordinate, itemCount));
+    const QGeoCoordinate home = controller->plannedHomePosition();
+    QVERIFY(home.isValid());
+    QVERIFY(home.distanceTo(lastCoordinate) > 10.0);
+
+    QQuickItem* const missionPath = findVisibleItem(_rootItem, QStringLiteral("geoMapMissionPath"), 3000);
+    QVERIFY(missionPath);
+    const bool returned = waitForCondition(
+        [&] { return ribbonReturnsAt(geoMapMissionRibbon(missionPath), lastCoordinate, lastAmsl, home, lastAmsl); },
+        3000, QStringLiteral("level return before the descent"));
+    QString failure;
+    QDebug(&failure) << "The ribbon does not return home level at the last altitude before descending:"
+                     << geoMapMissionRibbon(missionPath);
+    QVERIFY2(returned, qPrintable(failure));
+
+    // The last segment always carries a direction arrow: it must sit on the level part of the return leg
+    const double bias = missionPath->property("homeTerrainBias").toDouble();
+    const auto arrowOnLevelReturn = [&] {
+        const QList<QQuickItem*> arrows = findGeoMapItems(_rootItem, QStringLiteral("geoMapDirectionArrow"));
+        for (QQuickItem* const arrow : arrows) {
+            const QGeoCoordinate from = arrow->property("fromCoord").value<QGeoCoordinate>();
+            const QGeoCoordinate to = arrow->property("toCoord").value<QGeoCoordinate>();
+            if (to.distanceTo(home) < 0.5 && from.distanceTo(lastCoordinate) < 0.5) {
+                return qAbs(from.altitude() - bias - lastAmsl) < 0.5 && qAbs(to.altitude() - bias - lastAmsl) < 0.5;
+            }
+        }
+        return false;
+    };
+    QVERIFY2(waitForCondition(arrowOnLevelReturn, 3000, QStringLiteral("arrow on the level return")),
+             "The return leg's direction arrow does not sit on the level part of the leg");
+}
+
+void PlanPanelUITest::_testGeoMapMissionPathFollowsReturnAltitudeParameter()
+{
+    setUseTabbedPlanPanel(true);
+    setUseGeoMapPlanEngine(true);
+    runWithMockLink(
+        [] { return MockLink::startPX4MockLink(); },
+        [this](QPointer<MockLink> mockLink, Vehicle* vehicle) {
+            QVERIFY2(expectSoftwareBackendWarnings(/*strict*/ false).has_value(),
+                     "No renderer interface on the main window");
+            _openPlanView();
+            if (QTest::currentTestFailed())
+                return;
+            _buildMission(2);
+            if (QTest::currentTestFailed())
+                return;
+
+            MissionController* const controller = _missionController();
+            QVERIFY(controller);
+            const int itemCount = controller->visualItems()->count();
+            VisualMissionItem* const lastWaypoint = controller->visualItems()->value<VisualMissionItem*>(itemCount - 1);
+            QVERIFY(lastWaypoint);
+            const QGeoCoordinate lastCoordinate = lastWaypoint->coordinate();
+            const double lastAmsl = lastWaypoint->amslEntryAlt();
+            QVERIFY(controller->insertLandItem(lastCoordinate, itemCount));
+            const QGeoCoordinate home = controller->plannedHomePosition();
+            QVERIFY(home.isValid());
+            QVERIFY(home.distanceTo(lastCoordinate) > 10.0);
+
+            ParameterManager* const paramMgr = vehicle->parameterManager();
+            const QString paramName = QStringLiteral("RTL_RETURN_ALT");
+            QVERIFY(paramMgr->parameterExists(ParameterManager::defaultComponentId, paramName));
+            Fact* const returnAltitude = paramMgr->getParameter(ParameterManager::defaultComponentId, paramName);
+            // The mock vehicle's 30 m return altitude is below the plan: the return holds the plan altitude
+            QVERIFY(returnAltitude->rawValue().toDouble() < lastAmsl - home.altitude());
+
+            QQuickItem* const missionPath = findVisibleItem(_rootItem, QStringLiteral("geoMapMissionPath"), 3000);
+            QVERIFY(missionPath);
+            const auto returnsAt = [&](double levelAmsl) {
+                return waitForCondition(
+                    [&] {
+                        return ribbonReturnsAt(geoMapMissionRibbon(missionPath), lastCoordinate, lastAmsl, home,
+                                               levelAmsl);
+                    },
+                    3000, QStringLiteral("return at %1 m").arg(levelAmsl));
+            };
+            QVERIFY2(returnsAt(lastAmsl), "The ribbon does not hold the plan altitude on the return");
+
+            // Raising the vehicle's return altitude above the plan adds the climb
+            const double raisedAboveHome = lastAmsl - home.altitude() + 25.0;
+            returnAltitude->setRawValue(raisedAboveHome);
+            QVERIFY2(returnsAt(home.altitude() + raisedAboveHome),
+                     "The ribbon did not follow the raised return altitude parameter");
+
+            // Let the parameter write finish before the link goes away, or its retries log warnings
+            QVERIFY2(waitForCondition(
+                         [&] {
+                             return qFuzzyCompare(mockLink->paramValue(MAV_COMP_ID_AUTOPILOT1, paramName).toDouble(),
+                                                  raisedAboveHome) &&
+                                    !paramMgr->pendingWrites();
+                         },
+                         3000, QStringLiteral("parameter write")),
+                     "The return altitude write never reached the mock vehicle");
+        });
 }
 
 void PlanPanelUITest::_testFenceTabAddsFenceInsideTheGeoMapViewport_data()

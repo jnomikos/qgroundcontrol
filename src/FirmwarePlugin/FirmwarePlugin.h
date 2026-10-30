@@ -11,6 +11,7 @@
 #include "FollowMe.h"
 #include "VehicleTypes.h"
 
+class Fact;
 class Vehicle;
 
 class VehicleComponent;
@@ -210,6 +211,15 @@ public:
 
     /// @return The minimum takeoff altitude (relative) for guided takeoff.
     virtual double minimumTakeoffAltitudeMeters(Vehicle* /*vehicle*/) const { return 3.048; }
+
+    /// @return The parameter that sets the altitude a hover-capable vehicle returns home at in RTL/Return mode,
+    /// nullptr when the firmware has none or the parameters are not available yet.
+    virtual Fact* returnAltitudeFact(const Vehicle* /*vehicle*/) const { return nullptr; }
+
+    /// @return The altitude above home, in meters, a hover-capable vehicle climbs to before returning home in
+    /// RTL/Return mode. NaN when unknown: no such setting, parameters not available, or an altitude that is not
+    /// referenced to home.
+    virtual double returnAltitudeAboveHome(const Vehicle* vehicle) const;
 
     /// @return The maximum horizontal groundspeed for a multirotor.
     virtual double maximumHorizontalSpeedMultirotorMetersSecond(Vehicle* /*vehicle*/) const { return NAN; }

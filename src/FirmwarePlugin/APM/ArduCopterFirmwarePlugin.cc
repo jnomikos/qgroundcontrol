@@ -174,6 +174,35 @@ int ArduCopterFirmwarePlugin::remapParamNameHigestMinorVersionNumber(int majorVe
     return ((majorVersionNumber == 4) ? 7 : Vehicle::versionNotSetValue);
 }
 
+Fact* ArduCopterFirmwarePlugin::returnAltitudeFact(const Vehicle* vehicle) const
+{
+    ParameterManager* paramMgr = vehicle->parameterManager();
+    // noremap. pins the exact name: 4.7 renamed RTL_ALT (centimeters) to RTL_ALT_M (meters)
+    for (const QString& paramName : {QStringLiteral("noremap.RTL_ALT_M"), QStringLiteral("noremap.RTL_ALT")}) {
+        if (paramMgr->parameterExists(ParameterManager::defaultComponentId, paramName)) {
+            return paramMgr->getParameter(ParameterManager::defaultComponentId, paramName);
+        }
+    }
+    return nullptr;
+}
+
+double ArduCopterFirmwarePlugin::returnAltitudeAboveHome(const Vehicle* vehicle) const
+{
+    ParameterManager* paramMgr = vehicle->parameterManager();
+    const QString altTypeParam = QStringLiteral("RTL_ALT_TYPE");
+    // RTL_ALT_TYPE 1 makes the return altitude a height above terrain, not above home
+    if (paramMgr->parameterExists(ParameterManager::defaultComponentId, altTypeParam) &&
+        paramMgr->getParameter(ParameterManager::defaultComponentId, altTypeParam)->rawValue().toInt() != 0) {
+        return qQNaN();
+    }
+    const Fact* fact = returnAltitudeFact(vehicle);
+    if (!fact) {
+        return qQNaN();
+    }
+    const double value = fact->rawValue().toDouble();
+    return fact->name() == QStringLiteral("RTL_ALT") ? value / 100.0 : value;
+}
+
 bool ArduCopterFirmwarePlugin::multiRotorXConfig(Vehicle *vehicle) const
 {
     return (vehicle->parameterManager()->getParameter(ParameterManager::defaultComponentId, "FRAME")->rawValue().toInt() != 0);

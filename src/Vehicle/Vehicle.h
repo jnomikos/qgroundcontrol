@@ -204,6 +204,8 @@ public:
     Q_PROPERTY(bool                 hasGripper                  READ hasGripper                                                     NOTIFY hasGripperChanged)
     Q_PROPERTY(bool                 isROIEnabled                READ isROIEnabled                                                   NOTIFY isROIEnabledChanged)
     Q_PROPERTY(double               roiRelativeAltitudeMeters   READ roiRelativeAltitudeMeters                                      NOTIFY roiRelativeAltitudeMetersChanged)
+    /// RTL/Return altitude above home in meters from the vehicle's parameters, NaN when unknown
+    Q_PROPERTY(double returnAltitudeAboveHome READ returnAltitudeAboveHome NOTIFY returnAltitudeAboveHomeChanged)
     Q_PROPERTY(CheckList            checkListState              READ checkListState             WRITE setCheckListState             NOTIFY checkListStateChanged)
     Q_PROPERTY(bool                 readyToFlyAvailable         READ readyToFlyAvailable                                            NOTIFY readyToFlyAvailableChanged)  ///< true: readyToFly signalling is available on this vehicle
     Q_PROPERTY(bool                 readyToFly                  READ readyToFly                                                     NOTIFY readyToFlyChanged)
@@ -422,6 +424,7 @@ public:
     /// nullptr for the offline editing vehicle, which has nothing to be ready for
     VehicleReadiness* readiness() { return _readiness; }
     bool    hasGripper              () const;
+    double returnAltitudeAboveHome() const;
     bool haveMRSpeedLimits() const { return _multirotor_speed_limits_available; }
     bool haveFWSpeedLimits() const { return _fixed_wing_airspeed_limits_available; }
 
@@ -820,6 +823,7 @@ signals:
     void haveMRSpeedLimChanged          ();
     void haveFWSpeedLimChanged          ();
     void hasGripperChanged              ();
+    void returnAltitudeAboveHomeChanged();
 
     void firmwareVersionChanged         ();
     void firmwareCustomVersionChanged   ();

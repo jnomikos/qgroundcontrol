@@ -10,6 +10,7 @@
 #include "AppMessages.h"
 #include "AutoPilotPlugin.h"
 #include "Autotune.h"
+#include "Fact.h"
 #include "GenericAutoPilotPlugin.h"
 #include "MAVLinkLib.h"
 #include "MAVLinkProtocol.h"
@@ -695,4 +696,10 @@ FirmwarePluginInstanceData::CommandSupportedResult FirmwarePluginInstanceData::g
     }
 
     return MAV_CMD_supported.value(cmd, CommandSupportedResult::UNKNOWN);
+}
+
+double FirmwarePlugin::returnAltitudeAboveHome(const Vehicle* vehicle) const
+{
+    const Fact* fact = returnAltitudeFact(vehicle);
+    return fact ? fact->rawValue().toDouble() : qQNaN();
 }

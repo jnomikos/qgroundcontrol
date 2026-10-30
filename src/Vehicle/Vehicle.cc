@@ -1734,6 +1734,11 @@ void Vehicle::_parametersReady(bool parametersReady)
 
     emit haveMRSpeedLimChanged();
     emit haveFWSpeedLimChanged();
+
+    if (Fact* returnAltitudeFact = _firmwarePlugin->returnAltitudeFact(this)) {
+        connect(returnAltitudeFact, &Fact::rawValueChanged, this, &Vehicle::returnAltitudeAboveHomeChanged);
+    }
+    emit returnAltitudeAboveHomeChanged();
 }
 
 void Vehicle::_sendQGCTimeToVehicle()
@@ -1938,6 +1943,11 @@ double Vehicle::minimumEquivalentAirspeed()
 bool Vehicle::hasGripper()  const
 {
     return _firmwarePlugin->hasGripper(this);
+}
+
+double Vehicle::returnAltitudeAboveHome() const
+{
+    return _firmwarePlugin->returnAltitudeAboveHome(this);
 }
 
 void Vehicle::startTakeoff()

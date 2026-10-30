@@ -792,6 +792,16 @@ QString PX4FirmwarePlugin::getHobbsMeter(Vehicle* vehicle) const
     return timeStr;
 }
 
+Fact* PX4FirmwarePlugin::returnAltitudeFact(const Vehicle* vehicle) const
+{
+    ParameterManager* paramMgr = vehicle->parameterManager();
+    const QString paramName = QStringLiteral("RTL_RETURN_ALT");
+    if (!paramMgr->parameterExists(ParameterManager::defaultComponentId, paramName)) {
+        return nullptr;
+    }
+    return paramMgr->getParameter(ParameterManager::defaultComponentId, paramName);
+}
+
 bool PX4FirmwarePlugin::hasGripper(const Vehicle* vehicle) const
 {
     ParameterManager* paramMgr = vehicle->parameterManager();

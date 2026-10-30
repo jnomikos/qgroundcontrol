@@ -36,6 +36,8 @@ private slots:
     void _testGeoMapMissionPathReturnsToPlannedHome();
     void _testGeoMapMissionPathClimbsStraightUpOnMulticopterTakeoff_data();
     void _testGeoMapMissionPathClimbsStraightUpOnMulticopterTakeoff();
+    void _testGeoMapMissionPathReturnsLevelThenDescendsOnMulticopter();
+    void _testGeoMapMissionPathFollowsReturnAltitudeParameter();
     void _testFenceTabAddsFenceInsideTheGeoMapViewport_data();
     void _testFenceTabAddsFenceInsideTheGeoMapViewport();
     void _testFenceTabAddsFenceInsideTheViewportOverTheDateline_data();
