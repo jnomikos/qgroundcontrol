@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include <QtCore/QDebug>
 #include <QtCore/QList>
 #include <QtCore/QMetaObject>
 #include <QtCore/QObject>
@@ -1161,6 +1162,104 @@ void PlanPanelUITest::_testGeoMapMissionPathReturnsToPlannedHome()
     QVERIFY2(waitForCondition([&] { return routeEnd().isValid() && routeEnd().distanceTo(plannedHome) < 0.5; }, 3000,
                               QStringLiteral("route returns home")),
              "The route of a mission ending in Return does not go back to the planned home");
+}
+
+void PlanPanelUITest::_testGeoMapMissionPathClimbsStraightUpOnMulticopterTakeoff_data()
+{
+    QTest::addColumn<int>("firmwareClass");
+
+    // PX4 takeoff items carry a position; ArduPilot takeoff items are altitude-only
+    QTest::newRow("PX4 takeoff with a position") << static_cast<int>(QGCMAVLink::FirmwareClassPX4);
+    QTest::newRow("ArduPilot altitude-only takeoff") << static_cast<int>(QGCMAVLink::FirmwareClassArduPilot);
+}
+
+void PlanPanelUITest::_testGeoMapMissionPathClimbsStraightUpOnMulticopterTakeoff()
+{
+    QFETCH(int, firmwareClass);
+
+    AppSettings* const appSettings = SettingsManager::instance()->appSettings();
+    Fact* const vehicleClassFact = appSettings->offlineEditingVehicleClass();
+    Fact* const firmwareClassFact = appSettings->offlineEditingFirmwareClass();
+    const QVariant savedVehicleClass = vehicleClassFact->rawValue();
+    const QVariant savedFirmwareClass = firmwareClassFact->rawValue();
+    const auto restoreGuard = qScopeGuard([=] {
+        vehicleClassFact->setRawValue(savedVehicleClass);
+        firmwareClassFact->setRawValue(savedFirmwareClass);
+    });
+    firmwareClassFact->setRawValue(firmwareClass);
+    vehicleClassFact->setRawValue(QGCMAVLink::VehicleClassMultiRotor);
+
+    _startPlanPanel(true /* geoMapEngine */);
+    if (QTest::currentTestFailed())
+        return;
+
+    _buildMission(1);
+    if (QTest::currentTestFailed())
+        return;
+
+    PlanMasterController* const master = _planMasterController();
+    QVERIFY(master);
+    QVERIFY2(!master->controllerVehicle()->fixedWing(), "This test needs a vehicle that takes off vertically");
+    MissionController* const controller = _missionController();
+    QVERIFY(controller);
+    const QGeoCoordinate home = controller->plannedHomePosition();
+    QVERIFY(home.isValid());
+
+    VisualMissionItem* const takeoff = controller->visualItems()->value<VisualMissionItem*>(1);
+    QVERIFY(takeoff && takeoff->isTakeoffItem());
+    const bool positionedTakeoff = firmwareClass == QGCMAVLink::FirmwareClassPX4;
+    QCOMPARE(takeoff->specifiesCoordinate(), positionedTakeoff);
+
+    // Where the vehicle heads after the climb: the takeoff position, or the first waypoint when the takeoff
+    // has none
+    QGeoCoordinate headingOut;
+    double headingOutAmsl = 0;
+    if (positionedTakeoff) {
+        // Move the takeoff item off home so the leg to it has a horizontal part; by default the takeoff item
+        // drags the launch position along with it
+        QVERIFY(takeoff->setProperty("launchTakeoffAtSameLocation", false));
+        headingOut = home.atDistanceAndAzimuth(60.0, 90.0);
+        takeoff->setCoordinate(headingOut);
+        QCOMPARE(controller->plannedHomePosition(), home);
+        headingOutAmsl = takeoff->amslEntryAlt();
+    } else {
+        VisualMissionItem* const waypoint = controller->visualItems()->value<VisualMissionItem*>(2);
+        QVERIFY(waypoint && waypoint->specifiesCoordinate());
+        headingOut = waypoint->coordinate();
+        headingOutAmsl = waypoint->amslEntryAlt();
+    }
+    QVERIFY(headingOut.distanceTo(home) > 10.0);
+
+    QQuickItem* const missionPath = findVisibleItem(_rootItem, QStringLiteral("geoMapMissionPath"), 3000);
+    QVERIFY(missionPath);
+    const auto ribbon = [&] {
+        QVariant path;
+        QMetaObject::invokeMethod(missionPath, "_expandedPath", Q_RETURN_ARG(QVariant, path));
+        QList<QGeoCoordinate> coordinates;
+        for (const QVariant& coordinate : path.toMap().value(QStringLiteral("coordinates")).toList()) {
+            coordinates.append(coordinate.value<QGeoCoordinate>());
+        }
+        return coordinates;
+    };
+    const auto climbsStraightUp = [&] {
+        const QList<QGeoCoordinate> coordinates = ribbon();
+        if (coordinates.size() < 3) {
+            return false;
+        }
+        const double takeoffAmsl = takeoff->amslEntryAlt();
+        const QGeoCoordinate& ground = coordinates[0];
+        const QGeoCoordinate& climbTop = coordinates[1];
+        const QGeoCoordinate& arrival = coordinates[2];
+        return ground.distanceTo(home) < 0.5 && ground.altitude() < takeoffAmsl - 1.0 &&
+               climbTop.distanceTo(home) < 0.5 && qAbs(climbTop.altitude() - takeoffAmsl) < 0.5 &&
+               arrival.distanceTo(headingOut) < 0.5 && qAbs(arrival.altitude() - headingOutAmsl) < 0.5;
+    };
+    const bool climbed =
+        waitForCondition(climbsStraightUp, 3000, QStringLiteral("vertical climb before the takeoff leg"));
+    QString failure;
+    QDebug(&failure) << "The ribbon does not climb vertically over home to the takeoff altitude before heading out:"
+                     << ribbon();
+    QVERIFY2(climbed, qPrintable(failure));
 }
 
 void PlanPanelUITest::_testFenceTabAddsFenceInsideTheGeoMapViewport_data()

@@ -23,7 +23,11 @@ import "GeoMapAltitude.js" as GeoMapAltitude
 /// through a complex item's own footprint rather than skipping it), at true
 /// (AMSL) altitude. A leg is flown in its destination item's frame (ArduPilot
 /// AC_WPNav): legs arriving at a terrain-frame item are draped over the DEM
-/// with a linear AGL ramp, all other legs are straight lines. Straight legs
+/// with a linear AGL ramp, all other legs are straight lines. A non-fixed-wing
+/// takeoff climbs vertically over the launch point to the takeoff altitude
+/// before heading out (MissionController models the leg to a positioned
+/// takeoff item that way; an altitude-only ArduPilot takeoff gets an explicit
+/// climb point). Straight legs
 /// that pass below the terrain draw in collisionColor, as Plan view marks
 /// them. Stays visible
 /// in 2D mode (crossfade3D off), same as GeoMapFlightPath. Rebuilt wholesale
@@ -97,7 +101,11 @@ GeoMapItem {
     // after a landing item either. The walk starts at item 1 (item 0 is the
     // MissionSettingsItem, i.e. home); home is prepended only when the mission
     // starts from the ground — rover, or a takeoff command before the first
-    // coordinate item — mirroring linkStartToHome. leg is the type of the leg
+    // coordinate item — mirroring linkStartToHome. An altitude-only takeoff
+    // (ArduPilot: the command carries no coordinate, so it is no route point)
+    // still climbs a non-fixed-wing vertically over home to its altitude
+    // before the first coordinate item, so it contributes a climb point
+    // there. leg is the type of the leg
     // ARRIVING at a point, mirroring segmentTypeForPair: Takeoff / Land
     // destinations first, then Terrain for a terrain-frame destination
     // (MAV_FRAME_GLOBAL_TERRAIN_ALT), else Generic; Interior is a complex
@@ -109,6 +117,7 @@ GeoMapItem {
         if (root.missionController) {
             const items = root.missionController.visualItems
             let linkStartToHome = root.vehicle ? root.vehicle.rover : false
+            let altitudeOnlyTakeoff = null
             for (let i = 1; i < items.count; ++i) {
                 const visualItem = items.get(i)
                 if (visualItem.isSimpleItem && visualItem.command === MAVLinkEnums.MAV_CMD_NAV_RETURN_TO_LAUNCH) {
@@ -121,6 +130,9 @@ GeoMapItem {
                 }
                 if (points.length === 0 && visualItem.isTakeoffItem) {
                     linkStartToHome = true
+                    if (!visualItem.specifiesCoordinate && root._straightUpTakeoff) {
+                        altitudeOnlyTakeoff = visualItem
+                    }
                 }
                 if (visualItem.specifiesCoordinate && !visualItem.isStandaloneCoordinate) {
                     points.push({
@@ -152,6 +164,16 @@ GeoMapItem {
             if (linkStartToHome && points.length > 0 && items.count > 0) {
                 const home = items.get(0)
                 if (home.coordinate.isValid) {
+                    if (altitudeOnlyTakeoff) {
+                        points.unshift({
+                            coordinate: QtPositioning.coordinate(home.coordinate.latitude,
+                                                                 home.coordinate.longitude,
+                                                                 root._displayAmsl(altitudeOnlyTakeoff, home.coordinate,
+                                                                                   altitudeOnlyTakeoff.amslEntryAlt)),
+                            pendingAmsl: isNaN(altitudeOnlyTakeoff.amslEntryAlt),
+                            leg: GeoMapMissionPath.Takeoff
+                        })
+                    }
                     points.unshift({
                         coordinate: QtPositioning.coordinate(home.coordinate.latitude,
                                                              home.coordinate.longitude,
@@ -177,6 +199,27 @@ GeoMapItem {
     readonly property real _terrainSampleSpacingM: 50
     readonly property int _maxTerrainSamplesPerLeg: 200
 
+    // MissionController::_createFlightPathSegmentWorker: a non-fixed-wing
+    // (multicopter, and VTOL in multicopter mode) climbs vertically to the
+    // takeoff altitude, then flies over to the takeoff position at that
+    // altitude; only a fixed-wing climbs along the leg
+    readonly property bool _straightUpTakeoff: !(root.vehicle && root.vehicle.fixedWing)
+
+    function _climbsStraightUp(point) {
+        return point.leg === GeoMapMissionPath.Takeoff && root._straightUpTakeoff
+    }
+
+    // Start of the horizontal part of the leg arriving at point index i: the
+    // climb point above the previous point for a straight-up takeoff leg,
+    // else the previous point itself
+    function _legStart(points, i) {
+        const prev = points[i - 1].coordinate
+        if (root._climbsStraightUp(points[i])) {
+            return QtPositioning.coordinate(prev.latitude, prev.longitude, points[i].coordinate.altitude)
+        }
+        return prev
+    }
+
     // Terrain sampling can't live in the _routePoints binding: terrainHeightAt
     // is not NOTIFY-reactive, so draping is re-run explicitly here on route
     // changes and on terrainHeightsChanged as DEM patches stream in.
@@ -190,6 +233,7 @@ GeoMapItem {
             const coord = points[i].coordinate
             if (i > 0) {
                 const prev = points[i - 1].coordinate
+                const legStart = root._legStart(points, i)
                 const collision = collisions[i]
                 // Restart a recolored leg at a copy of its start point so the color
                 // changes at the waypoint instead of blending along the leg
@@ -197,10 +241,13 @@ GeoMapItem {
                     coordinates.push(prev)
                     highlights.push(collision)
                 }
+                if (root._climbsStraightUp(points[i]) && legStart.distanceTo(coord) > 0) {
+                    coordinates.push(legStart)
+                }
                 if (points[i].leg === GeoMapMissionPath.Terrain && root.surfaceModel) {
-                    root._appendTerrainLeg(coordinates, prev, coord)
+                    root._appendTerrainLeg(coordinates, legStart, coord)
                 } else {
-                    coordinates.push(...root._longLegSubdivision(prev, coord))
+                    coordinates.push(...root._longLegSubdivision(legStart, coord))
                 }
                 coordinates.push(coord)
                 while (highlights.length < coordinates.length) {
@@ -270,19 +317,13 @@ GeoMapItem {
         if (!root.surfaceModel || (root.vehicle && root.vehicle.rover)) {
             return collisions
         }
-        const straightUpTakeoff = !(root.vehicle && root.vehicle.fixedWing)
         for (let i = 1; i < points.length; ++i) {
             const leg = points[i].leg
             if (leg === GeoMapMissionPath.Terrain || leg === GeoMapMissionPath.Interior) {
                 continue
             }
             const coord = points[i].coordinate
-            let prev = points[i - 1].coordinate
-            // MissionController::_createFlightPathSegmentWorker: a non-fixed-wing
-            // climbs vertically, then flies over at the takeoff altitude
-            if (leg === GeoMapMissionPath.Takeoff && straightUpTakeoff) {
-                prev = QtPositioning.coordinate(prev.latitude, prev.longitude, coord.altitude)
-            }
+            const prev = root._legStart(points, i)
             // Check the same great-circle pieces _expandedPath draws
             const chain = [prev, ...root._longLegSubdivision(prev, coord), coord]
             for (let j = 1; j < chain.length && !collisions[i]; ++j) {
@@ -342,6 +383,7 @@ GeoMapItem {
     }
 
     on_RoutePointsChanged: _scheduleReloadPath()
+    on_StraightUpTakeoffChanged: _scheduleReloadPath()
     onHomeTerrainBiasChanged: _scheduleCollisionRefresh()
 
     readonly property bool _hasTerrainLeg: _routePoints.some(p => p.leg === GeoMapMissionPath.Terrain)

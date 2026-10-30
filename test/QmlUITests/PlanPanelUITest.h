@@ -34,6 +34,8 @@ private slots:
     void _testGeoMapMarkerShowsWhileTerrainAltitudePending();
     void _testGeoMapTerrainWaypointDragKeepsTheMarkerUnderTheCursor();
     void _testGeoMapMissionPathReturnsToPlannedHome();
+    void _testGeoMapMissionPathClimbsStraightUpOnMulticopterTakeoff_data();
+    void _testGeoMapMissionPathClimbsStraightUpOnMulticopterTakeoff();
     void _testFenceTabAddsFenceInsideTheGeoMapViewport_data();
     void _testFenceTabAddsFenceInsideTheGeoMapViewport();
     void _testFenceTabAddsFenceInsideTheViewportOverTheDateline_data();
